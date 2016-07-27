@@ -2,6 +2,7 @@ package chexec
 
 import (
 	"bufio"
+	"io"
 	"os/exec"
 )
 
@@ -21,35 +22,33 @@ func Command(name string, args ...string) *command {
 }
 
 func (c *command) Run() error {
-	stdoutReader, err := c.StdoutPipe()
+	var (
+		err            error
+		stdout, stderr io.ReadCloser
+	)
 
-	if err != nil {
-		return err
-	}
-
-	go func() {
-		scanner := bufio.NewScanner(stdoutReader)
-
-		for scanner.Scan() {
-			c.Stdout <- scanner.Bytes()
+	defer func() {
+		if err != nil {
+			c.closeChannels()
 		}
 	}()
 
-	stderrReader, err := c.StderrPipe()
-
-	if err != nil {
+	if stdout, err = c.StdoutPipe(); err != nil {
 		return err
 	}
 
-	go func() {
-		scanner := bufio.NewScanner(stderrReader)
+	if stderr, err = c.StderrPipe(); err != nil {
+		return err
+	}
 
-		for scanner.Scan() {
-			c.Stderr <- scanner.Bytes()
-		}
-	}()
+	err = c.Start()
 
-	return c.Start()
+	if err == nil {
+		go bridge(stdout, c.Stdout)
+		go bridge(stderr, c.Stderr)
+	}
+
+	return err
 }
 
 func (c *command) Wait() chan error {
@@ -57,7 +56,29 @@ func (c *command) Wait() chan error {
 
 	go func() {
 		err <- c.Cmd.Wait()
+		c.closeChannels()
 	}()
 
 	return err
+}
+
+func (c *command) Kill() error {
+	err := c.Process.Kill()
+	c.closeChannels()
+	return err
+}
+
+// We have potential problems from here
+// How to signal to these functions that the channel(s) is(are) closed?
+func (c *command) closeChannels() {
+	close(c.Stdout)
+	close(c.Stderr)
+}
+
+func bridge(rc io.ReadCloser, ch chan []byte) {
+	scanner := bufio.NewScanner(rc)
+
+	for scanner.Scan() {
+		ch <- scanner.Bytes()
+	}
 }

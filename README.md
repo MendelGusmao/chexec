@@ -17,7 +17,7 @@ import (
 )
 
 func main() {
-	cmd := chexec.Command("/bin/bash", "-c", "c=0; while true; do echo $c; date; ping thisdomaindoesnt.exist; c=$((c+1)); [ $c -eq 3 ] && exit; sleep 1; done")
+	cmd := chexec.Command("/bin/bash", "-c", "c=0; while true; do echo $c; date; cat /this/file/doesnt.exist; c=$((c+1)); [ $c -eq 3 ] && exit; sleep 1; done")
 
 	if err := cmd.Run(); err != nil {
 		fmt.Println("run:", err)
